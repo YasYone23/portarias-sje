@@ -202,6 +202,8 @@ export default async (req) => {
       }
     }
 
+    if (path[0] === 'resps' && me === 'GET') { const r = await getJSON('resps', { list: [] }); return J({ list: r.list }); }
+
     // ---------- administração ----------
     if (!isAdmin) return E('Acesso restrito ao administrador.', 403);
 
@@ -239,6 +241,13 @@ export default async (req) => {
         await log(u, 'Excluiu o usuário ' + r.login);
         return J({ ok: true });
       }
+    }
+    if (path[0] === 'resps' && me === 'PUT') {
+      const b = await readJSON(req);
+      const list = [...new Set((Array.isArray(b.list) ? b.list : []).map(x => str(x, 100)).filter(Boolean))].slice(0, 200).sort((a, c) => a.localeCompare(c, 'pt-BR'));
+      await update('resps', { list: [] }, c => { c.list = list; });
+      await log(u, 'Atualizou a lista de responsáveis');
+      return J({ list });
     }
     if (path[0] === 'log' && me === 'GET') { const l = await getJSON('log', { l: [] }); return J({ log: l.l.slice(0, 400) }); }
     if (path[0] === 'import' && me === 'POST') {
