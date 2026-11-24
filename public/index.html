@@ -237,7 +237,7 @@ function countUp(el, to) { const T = 700, t0 = performance.now(); if (matchMedia
 const store = { get: k => { try { return localStorage.getItem(k) } catch { return null } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v) } catch { } } };
 
 /* ===================== estado e API ===================== */
-const S = { token: store.get('gp_tk'), user: null, items: [], tab: 'consulta', q: '', ano: '', sit: '', resp: '', rh: '', shown: 30, qano: new Date().getFullYear(), adm: 'users', users: null, log: null, form: null };
+const S = { token: store.get('gp_tk'), user: null, items: [], tab: 'consulta', q: '', ano: '', sit: '', resp: '', rh: '', shown: 30, qano: new Date().getFullYear(), adm: 'users', users: null, log: null, form: null, resps: [] };
 async function api(method, path, body, opt = {}) {
   const h = {}; if (S.token) h.authorization = 'Bearer ' + S.token;
   let b; if (opt.raw) { b = body; h['x-filename'] = encodeURIComponent(opt.name || 'arquivo.pdf'); h['content-type'] = 'application/pdf'; } else if (body !== undefined) { b = JSON.stringify(body); h['content-type'] = 'application/json'; }
@@ -412,7 +412,7 @@ function formHtml() {
   <div class="fgrid">
    <div class="c4"><label class="f">Número da portaria</label><div class="numctl"><input class="in" id="f-seq" type="number" min="1" value="${F.seq}"><span>/</span><select class="in" id="f-ano" style="font-family:var(--hd);font-weight:700;font-size:18px">${[...new Set([new Date().getFullYear() + 1, new Date().getFullYear(), new Date().getFullYear() - 1, ...years(), F.ano])].sort((a, b) => b - a).map(y => `<option ${y == F.ano ? 'selected' : ''}>${y}</option>`).join('')}</select></div><div class="hint" id="numhint"></div><div class="free" id="free"></div></div>
    <div class="c4"><label class="f" for="f-data">Data da portaria</label><input class="in" id="f-data" type="date" value="${esc(F.data)}"></div>
-   <div class="c4"><label class="f" for="f-resp">Responsável pela portaria <small>(quem está no acesso)</small></label><input class="in" id="f-resp" list="ul" value="${esc(F.resp)}" ${adminEd ? '' : 'readonly'}><datalist id="ul">${users.map(u => `<option value="${esc(u)}">`).join('')}</datalist></div>
+   <div class="c4"><label class="f" for="f-resp">Responsável pela portaria <small>(quem está no acesso)</small></label>${adminEd ? `<select class="in" id="f-resp">${respOpts().map(r => `<option ${r === F.resp ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__o">＋ Outro nome…</option></select><input class="in" id="f-resp-o" placeholder="Digite o nome do responsável" style="margin-top:8px;display:none">` : `<input class="in" id="f-resp" value="${esc(F.resp)}" readonly>`}<div class="hint">${adminEd ? 'Como administradora, você pode lançar a portaria em nome de outra pessoa.' : ''}</div></div>
    <div class="c12"><label class="f" for="f-ass">Assunto da portaria</label><textarea class="in" id="f-ass" placeholder="Ex.: Nomeia servidor para o cargo de…">${esc(F.assunto)}</textarea></div>
    <div class="c12"><label class="f">Servidor(es) citado(s) <small>— digite o nome e tecle Enter. Facilita a busca.</small></label><div class="tagbox" id="tagbox"><span id="tags"></span><input id="f-sv" list="svl" placeholder="Adicionar nome…" autocomplete="off"></div><datalist id="svl">${[...new Set(S.items.flatMap(p => p.servidores || []))].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(s => `<option value="${esc(s)}">`).join('')}</datalist></div>
    <div class="c4"><label class="f">Assinada pelo responsável?</label><div class="seg" data-k="assinada"><button type="button" data-v="Sim">Sim</button><button type="button" data-v="Não">Não</button></div></div>
@@ -437,7 +437,8 @@ function bindForm() {
   tags(); segs(); hint();
   g('f-seq').oninput = () => { F.seq = +g('f-seq').value; hint(); }; g('f-ano').onchange = () => { F.ano = +g('f-ano').value; if (!F.id) { F.seq = nextFree(F.ano); g('f-seq').value = F.seq; } hint(); };
   g('free').onclick = e => { const b = e.target.closest('button'); if (b) { F.seq = +b.dataset.s; g('f-seq').value = F.seq; hint(); } };
-  ['data', 'resp', 'link', 'obs'].forEach(k => g('f-' + k).oninput = e => F[k] = e.target.value); g('f-ass').oninput = e => F.assunto = e.target.value;
+  ['data', 'link', 'obs'].forEach(k => g('f-' + k).oninput = e => F[k] = e.target.value);
+  if (isAdmin()) { const rs = g('f-resp'), ro = g('f-resp-o'); rs.onchange = () => { if (rs.value === '__o') { ro.style.display = 'block'; ro.focus(); F.resp = ro.value.trim(); } else { ro.style.display = 'none'; F.resp = rs.value; } }; ro.oninput = () => F.resp = ro.value.trim(); } g('f-ass').oninput = e => F.assunto = e.target.value;
   g('f-data').onchange = e => { F.data = e.target.value; };
   $$('.seg').forEach(s => s.onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled) { F[s.dataset.k] = b.dataset.v; segs(); } });
   const addSv = () => { const v = g('f-sv').value.replace(/,$/, '').trim(); if (v && !F.servidores.includes(v)) F.servidores.push(v); g('f-sv').value = ''; tags(); };
@@ -460,6 +461,7 @@ function bindForm() {
   });
   g('f-save').onclick = saveForm;
 }
+function respOpts() { const F = S.form || {}; return [...new Set([S.user.nome, ...(S.users || []).filter(u => u.ativo).map(u => u.nome), ...(S.resps || []), ...S.items.map(p => p.resp).filter(Boolean), F.resp].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); }
 function upsert(it) { const i = S.items.findIndex(x => x.id === it.id); delete it._b; i < 0 ? S.items.push(it) : (S.items[i] = it); }
 async function saveForm() {
   const F = S.form, b = $('#f-save'); if (!F.assunto.trim()) return toast('Informe o assunto da portaria.', true); if (!(F.seq >= 1)) return toast('Informe o número da portaria.', true);
@@ -502,7 +504,7 @@ function bindQuadro() { $$('.kpi b[data-n]').forEach(b => countUp(b, +b.dataset.
 const ROLEN = { admin: 'Administrador', editor: 'Preenche portarias', consulta: 'Somente consulta' };
 async function loadAdm() { try { if (!S.users) S.users = (await api('GET', 'users')).users; if (S.adm === 'log') S.log = (await api('GET', 'log')).log; } catch (e) { toast(e.message, true); } }
 function admHtml() {
-  const tabs = [['users', 'Usuários'], ['import', 'Importar portarias'], ['log', 'Acessos'], ['bk', 'Cópia de segurança']];
+  const tabs = [['users', 'Usuários'], ['resp', 'Responsáveis'], ['import', 'Importar portarias'], ['log', 'Acessos'], ['bk', 'Cópia de segurança']];
   let body = '';
   if (S.adm === 'users') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Cadastrar usuário</h3><p style="color:var(--mu);margin:0 0 16px">Quem preenche portarias e quem só consulta. Cada pessoa usa o próprio login e senha.</p>
   <div class="fgrid"><div class="c3"><label class="f">Nome completo</label><input class="in" id="u-n"></div><div class="c3"><label class="f">Login</label><input class="in" id="u-l" autocapitalize="none" placeholder="ex.: maria.silva"></div><div class="c3"><label class="f">Senha inicial</label><input class="in" id="u-s" type="text" placeholder="mín. 6 caracteres"></div>
@@ -510,6 +512,9 @@ function admHtml() {
   <div class="c12"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="u-h" style="width:18px;height:18px;accent-color:#117a4d"> Controle do RH (pode marcar “entregue ao RH”)</label></div></div>
   <div class="mact"><button class="btn b1" id="u-add">${I('plus')}Cadastrar usuário</button></div></div>
   <div class="card rise ox" style="margin-top:16px;--i:2"><table class="t"><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Último acesso</th><th></th></tr>${(S.users || []).map(u => `<tr class="${u.ativo ? '' : 'off'}"><td><b>${esc(u.nome)}</b>${u.rh ? ' <span class="role editor">RH</span>' : ''}${u.ativo ? '' : ' <span class="role consulta">desativado</span>'}</td><td>${esc(u.login)}</td><td><span class="role ${u.role}">${ROLEN[u.role]}</span></td><td>${u.ultimo ? fmtT(u.ultimo) : '—'}</td><td style="text-align:right;white-space:nowrap"><button class="btn b2 sm" data-eu="${u.id}">${I('edit')}Editar</button> ${u.id !== S.user.id ? `<button class="btn bd sm" data-du="${u.id}">${I('trash')}</button>` : ''}</td></tr>`).join('')}</table></div>`;
+  if (S.adm === 'resp') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Responsáveis pelas portarias</h3><p style="color:var(--mu);margin:0 0 14px">Cadastre aqui as pessoas que podem ser indicadas como responsáveis, mesmo que não tenham login. Elas aparecem na lista ao cadastrar uma portaria. Quem tem login e quem já aparece em portarias antigas entra na lista automaticamente.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap"><input class="in" id="rs-n" placeholder="Nome do responsável" style="flex:1;min-width:220px"><button class="btn b1" id="rs-add">${I('plus')}Adicionar</button></div>
+  <div class="chips" style="margin-top:16px">${(S.resps || []).map((r, i) => `<span class="chip"><i>${esc(initials(r))}</i>${esc(r)}<button type="button" data-rr="${i}" aria-label="Remover">×</button></span>`).join('') || '<span style="color:var(--mu)">Nenhum responsável extra cadastrado ainda.</span>'}</div></div>`;
   if (S.adm === 'import') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Importar portarias já cadastradas</h3><p style="color:var(--mu);margin:0 0 14px">Use o <b>Backup</b> do Sistema da Secretaria (aquele texto que você copia no botão Backup) ou um arquivo .json/.txt salvo dele. As portarias são aproveitadas com número, data, assunto, servidor, responsável, RH, assinatura e link. Números que já existem aqui são mantidos.</p>
   <label class="f">Escolher arquivo</label><input type="file" id="im-f" accept=".json,.txt,application/json,text/plain" class="in"><div style="height:12px"></div><label class="f">…ou cole o texto do Backup aqui</label><textarea class="in" id="im-t" rows="5" placeholder='{"portarias":[…]}'></textarea>
   <div id="im-pv" style="margin-top:14px"></div></div>`;
@@ -532,6 +537,9 @@ function bindAdm() {
   if (g('u-add')) g('u-add').onclick = async () => { try { const r = await api('POST', 'users', { nome: g('u-n').value, login: g('u-l').value, senha: g('u-s').value, role: g('u-r').value, rh: g('u-h').checked }); S.users.push(r.user); toast('Usuário cadastrado. Passe o login e a senha para a pessoa.'); render(); } catch (e) { toast(e.message, true); } };
   $$('[data-eu]').forEach(b => b.onclick = () => userModal(S.users.find(u => u.id === b.dataset.eu)));
   $$('[data-du]').forEach(b => b.onclick = async () => { const u = S.users.find(x => x.id === b.dataset.du); if (confirm(`Excluir o acesso de ${u.nome}?`)) { try { await api('DELETE', 'users/' + u.id); S.users = S.users.filter(x => x.id !== u.id); toast('Usuário excluído.'); render(); } catch (e) { toast(e.message, true); } } });
+  const saveR = async l => { try { S.resps = (await api('PUT', 'resps', { list: l })).list; toast('Lista de responsáveis atualizada.'); render(); } catch (e) { toast(e.message, true); } };
+  if (g('rs-add')) { const go1 = () => { const v = g('rs-n').value.trim(); if (v) saveR([...S.resps, v]); }; g('rs-add').onclick = go1; g('rs-n').onkeydown = e => { if (e.key === 'Enter') go1(); }; }
+  $$('[data-rr]').forEach(b => b.onclick = () => saveR(S.resps.filter((_, i) => i !== +b.dataset.rr)));
   if (g('bk-dl')) g('bk-dl').onclick = () => save(new Blob([JSON.stringify({ geradoEm: new Date().toISOString(), portarias: S.items.map(({ _b, ...p }) => p) }, null, 1)], { type: 'application/json' }), `portarias-${new Date().toISOString().slice(0, 10)}.json`);
   if (g('im-f')) {
     let list = null;
@@ -560,6 +568,7 @@ async function boot() {
   try {
     const me = await api('GET', 'me'); S.user = me.user;
     S.items = (await api('GET', 'portarias')).items;
+    api('GET', 'resps').then(r => { S.resps = r.list; }).catch(() => { });
     if (isAdmin()) api('GET', 'users').then(r => { S.users = r.users; }).catch(() => { });
     S.tab = 'consulta'; render();
   } catch (e) { if (!S.token) renderLogin(); else { store.set('gp_tk', null); S.token = null; renderLogin(e.message); } }
