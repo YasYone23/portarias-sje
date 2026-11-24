@@ -66,7 +66,7 @@ button.kpi:hover{transform:translateY(-3px);border-color:#b9d8c5;box-shadow:0 14
 .kpi b{font-family:var(--hd);font-size:32px;line-height:1.1;letter-spacing:-.02em;display:block;margin-top:4px}
 .kpi:after{content:"";position:absolute;right:-18px;bottom:-18px;width:70px;height:70px;border-radius:50%;background:var(--mint);opacity:.7}
 .kpi.warn:after{background:var(--amberbg)}.kpi.teal:after{background:var(--tealbg)}.kpi.red:after{background:var(--redbg)}
-.tools{display:grid;grid-template-columns:minmax(260px,1.6fr) repeat(3,minmax(140px,1fr)) auto;gap:10px;align-items:center}
+.tools{display:grid;grid-template-columns:minmax(240px,1.5fr) repeat(4,minmax(125px,1fr)) auto;gap:10px;align-items:center}
 .search{position:relative}
 .search svg{position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--g2)}
 input.in,select.in,textarea.in{width:100%;border:1.5px solid var(--bd);background:#fbfdfc;border-radius:14px;padding:11px 14px;transition:border-color .15s,box-shadow .15s,background .15s}
@@ -237,7 +237,7 @@ function countUp(el, to) { const T = 700, t0 = performance.now(); if (matchMedia
 const store = { get: k => { try { return localStorage.getItem(k) } catch { return null } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v) } catch { } } };
 
 /* ===================== estado e API ===================== */
-const S = { token: store.get('gp_tk'), user: null, items: [], tab: 'consulta', q: '', ano: '', sit: '', resp: '', rh: '', shown: 30, qano: new Date().getFullYear(), adm: 'users', users: null, log: null, form: null, resps: [] };
+const S = { token: store.get('gp_tk'), user: null, items: [], tab: 'consulta', q: '', ano: '', sit: '', resp: '', setor: '', rh: '', shown: 30, qano: new Date().getFullYear(), adm: 'users', users: null, log: null, form: null, resps: [] };
 async function api(method, path, body, opt = {}) {
   const h = {}; if (S.token) h.authorization = 'Bearer ' + S.token;
   let b; if (opt.raw) { b = body; h['x-filename'] = encodeURIComponent(opt.name || 'arquivo.pdf'); h['content-type'] = 'application/pdf'; } else if (body !== undefined) { b = JSON.stringify(body); h['content-type'] = 'application/json'; }
@@ -261,13 +261,14 @@ const canEdit = () => S.user && (S.user.role === 'admin' || S.user.role === 'edi
 const isAdmin = () => S.user && S.user.role === 'admin';
 const canRH = () => S.user && (S.user.role === 'admin' || S.user.rh);
 const years = () => [...new Set(S.items.map(p => p.ano))].sort((a, b) => b - a);
-const blob = p => norm([numTxt(p), p.assunto, p.resp, (p.servidores || []).join(' '), p.link, p.data, fmtD(p.data), p.obs].join(' '));
+const blob = p => norm([numTxt(p), p.assunto, p.resp, p.setor, (p.servidores || []).join(' '), p.link, p.data, fmtD(p.data), p.obs].join(' '));
 function filtered() {
   const q = norm(S.q).split(/\s+/).filter(Boolean);
   return S.items.filter(p => {
     if (S.ano && p.ano != S.ano) return false;
     if (S.sit && stKey(p) !== S.sit) return false;
     if (S.resp && p.resp !== S.resp) return false;
+    if (S.setor && p.setor !== S.setor) return false;
     if (S.rh && p.rh !== S.rh) return false;
     if (q.length) { const b = p._b || (p._b = blob(p)); if (!q.every(t => b.includes(t))) return false; }
     return true;
@@ -327,20 +328,21 @@ function kpiHtml() {
   return `<div class="kpis">${K.map((k, i) => `<button class="kpi ${k[2]} rise" style="--i:${i}" onclick="_kp[${i}]();S.shown=30;render()"><small>${k[0]}</small><b data-n="${k[1]}">0</b></button>`).join('')}</div>`;
 }
 function consultaHtml() {
-  const resps = [...new Set(S.items.map(p => p.resp).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const resps = [...new Set(S.items.map(p => p.resp).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')), setores = [...new Set(S.items.map(p => p.setor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   return `${kpiHtml()}<div class="card rise" style="--i:3"><div class="tools">
   <div class="search"><span>${I('search')}</span><input class="in" id="q" placeholder="Buscar número, assunto, servidor…" value="${esc(S.q)}" autocomplete="off"></div>
   <select class="in" id="fa" aria-label="Ano"><option value="">Todos os anos</option>${years().map(y => `<option ${S.ano == y ? 'selected' : ''}>${y}</option>`).join('')}</select>
   <select class="in" id="fs" aria-label="Situação"><option value="">Todas as situações</option>${Object.entries(stTxt).map(([k, v]) => `<option value="${k}" ${S.sit === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
   <select class="in" id="fr" aria-label="Responsável"><option value="">Todos os responsáveis</option>${resps.map(r => `<option ${S.resp === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
+  <select class="in" id="fz" aria-label="Setor"><option value="">Todos os setores</option>${setores.map(r => `<option ${S.setor === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
   <button class="btn b3" id="clr">${I('x')}Limpar</button></div></div>
   <div class="count"><span id="cnt"></span><span style="display:flex;gap:8px"><button class="btn b3 sm" onclick="exportCsv()">${I('dl')}Exportar lista (CSV)</button></span></div><div id="list"></div>`;
 }
 function bindConsulta() {
   const upd = () => { S.shown = 30; renderList(); };
   $('#q').oninput = e => { S.q = e.target.value; upd(); };
-  $('#fa').onchange = e => { S.ano = e.target.value; upd(); }; $('#fs').onchange = e => { S.sit = e.target.value; upd(); }; $('#fr').onchange = e => { S.resp = e.target.value; upd(); };
-  $('#clr').onclick = () => { S.q = S.ano = S.sit = S.resp = S.rh = ''; S.shown = 30; render(); };
+  $('#fa').onchange = e => { S.ano = e.target.value; upd(); }; $('#fs').onchange = e => { S.sit = e.target.value; upd(); }; $('#fr').onchange = e => { S.resp = e.target.value; upd(); }; $('#fz').onchange = e => { S.setor = e.target.value; upd(); };
+  $('#clr').onclick = () => { S.q = S.ano = S.sit = S.resp = S.setor = S.rh = ''; S.shown = 30; render(); };
   $$('.kpi b').forEach(b => countUp(b, +b.dataset.n));
   renderList();
 }
@@ -355,7 +357,7 @@ function rowHtml(p, i) {
   const k = stKey(p), sv = p.servidores || [];
   return `<div class="row ${k} rise" style="--i:${Math.min(i, 8)}" onclick="detail('${p.id}')"><div class="num">${esc(numTxt(p))}<small>${fmtD(p.data)}</small></div>
   <div><div class="ass">${esc(p.assunto)}</div>${sv.length ? `<div class="chips">${sv.map(s => `<span class="chip"><i>${esc(initials(s))}</i>${esc(s)}</span>`).join('')}</div>` : ''}
-  <div class="meta"><span class="pill ${k}">${stTxt[k]}</span>${canEdit() ? `<span class="pill ${p.rh === 'Sim' ? 'rok' : 'rno'}">RH: ${p.rh === 'Sim' ? 'entregue' : 'não entregue'}</span>` : ''}<span>${I('user')}${esc(p.resp || '—')}</span></div></div>
+  <div class="meta"><span class="pill ${k}">${stTxt[k]}</span>${canEdit() ? `<span class="pill ${p.rh === 'Sim' ? 'rok' : 'rno'}">RH: ${p.rh === 'Sim' ? 'entregue' : 'não entregue'}</span>` : ''}<span>${I('user')}${esc(p.resp || '—')}${p.setor ? ' · ' + esc(p.setor) : ''}</span></div></div>
   <div class="acts">${actionsHtml(p)}</div></div>`;
 }
 function renderList() {
@@ -366,7 +368,7 @@ function renderList() {
 }
 function exportCsv() {
   const l = filtered(), q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const rows = [['Número', 'Data', 'Assunto', 'Servidores citados', 'Responsável', 'Assinada', 'Entregue ao RH', 'Situação', 'Link da publicação'].map(q).join(';'), ...l.map(p => [numTxt(p), fmtD(p.data), p.assunto, (p.servidores || []).join(', '), p.resp, isSig(p) ? 'Sim' : 'Não', p.rh, stTxt[stKey(p)], p.link].map(q).join(';'))];
+  const rows = [['Número', 'Data', 'Assunto', 'Servidores citados', 'Responsável', 'Setor do responsável', 'Assinada', 'Entregue ao RH', 'Situação', 'Link da publicação'].map(q).join(';'), ...l.map(p => [numTxt(p), fmtD(p.data), p.assunto, (p.servidores || []).join(', '), p.resp, p.setor, isSig(p) ? 'Sim' : 'Não', p.rh, stTxt[stKey(p)], p.link].map(q).join(';'))];
   save(new Blob(['﻿' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'portarias.csv');
 }
 function save(b, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800); }
@@ -377,8 +379,8 @@ function detail(id) {
   const p = S.items.find(x => x.id === id); if (!p) return; const k = stKey(p), a = p.arqs || {}, nm = numTxt(p).replace('/', '-');
   const o = modal(`<span class="pill ${k}">${stTxt[k]}</span><h3 style="margin-top:10px">Portaria ${esc(numTxt(p))}</h3><div style="color:var(--mu)">${fmtD(p.data)}</div>
   <dl class="kv"><dt>Assunto</dt><dd>${esc(p.assunto).replace(/\n/g, '<br>')}</dd>
-  <dt>Servidores citados</dt><dd>${(p.servidores || []).length ? `<div class="chips" style="margin:0">${p.servidores.map(s => `<span class="chip"><i>${esc(initials(s))}</i>${esc(s)}</span>`).join('')}</div>` : '—'}</dd>
-  <dt>Responsável</dt><dd>${esc(p.resp || '—')}</dd><dt>Assinada</dt><dd>${isSig(p) ? 'Sim' : 'Não'}</dd>
+  <dt>Servidores envolvidos</dt><dd>${(p.servidores || []).length ? `<div class="chips" style="margin:0">${p.servidores.map(s => `<span class="chip"><i>${esc(initials(s))}</i>${esc(s)}</span>`).join('')}</div>` : '—'}</dd>
+  <dt>Responsável</dt><dd>${esc(p.resp || '—')}${p.setor ? ' · ' + esc(p.setor) : ''}</dd><dt>Assinada</dt><dd>${isSig(p) ? 'Sim' : 'Não'}</dd>
   ${canEdit() ? `<dt>Entregue ao RH</dt><dd>${p.rh === 'Sim' ? 'Sim' + (p.rhEm ? ' · ' + fmtT(p.rhEm) + (p.rhPor ? ' · ' + esc(p.rhPor) : '') : '') : 'Não'}</dd>` : ''}
   <dt>Publicação</dt><dd>${p.link ? `<a href="${esc(p.link)}" target="_blank" rel="noopener">${esc(p.link)}</a>` : (isPub(p) ? 'Publicada' : 'Ainda não publicada')}</dd>
   ${p.obs ? `<dt>Observações</dt><dd>${esc(p.obs)}</dd>` : ''}
@@ -400,7 +402,7 @@ function detail(id) {
 /* ===================== nova portaria / edição ===================== */
 function newForm(seq, ano) {
   const y = ano || new Date().getFullYear();
-  return { id: null, ano: y, seq: seq || nextFree(y), data: new Date().toISOString().slice(0, 10), resp: S.user.nome, rh: 'Não', assunto: '', assinada: 'Não', link: '', servidores: [], obs: '', files: { assinada: null, publicacao: null }, arqs: {}, ok: '' };
+  return { id: null, ano: y, seq: seq || nextFree(y), data: new Date().toISOString().slice(0, 10), resp: S.user.nome, setor: S.user.setor || '', rh: 'Não', assunto: '', assinada: 'Não', link: '', servidores: [], obs: '', files: { assinada: null, publicacao: null }, arqs: {}, ok: '' };
 }
 function editP(id) { const p = S.items.find(x => x.id === id); S.form = { ...newForm(), ...JSON.parse(JSON.stringify(p)), files: { assinada: null, publicacao: null }, ok: '' }; S.tab = 'nova'; render(); scrollTo({ top: 0 }); }
 const dropHtml = (kind, titulo, dica) => `<div class="drop" id="dz-${kind}"><span class="ico">${I('up')}</span><div><b>${titulo}</b><small id="dzt-${kind}">${dica}</small></div><input type="file" accept="application/pdf,.pdf" id="fi-${kind}"></div>`;
@@ -412,9 +414,9 @@ function formHtml() {
   <div class="fgrid">
    <div class="c4"><label class="f">Número da portaria</label><div class="numctl"><input class="in" id="f-seq" type="number" min="1" value="${F.seq}"><span>/</span><select class="in" id="f-ano" style="font-family:var(--hd);font-weight:700;font-size:18px">${[...new Set([new Date().getFullYear() + 1, new Date().getFullYear(), new Date().getFullYear() - 1, ...years(), F.ano])].sort((a, b) => b - a).map(y => `<option ${y == F.ano ? 'selected' : ''}>${y}</option>`).join('')}</select></div><div class="hint" id="numhint"></div><div class="free" id="free"></div></div>
    <div class="c4"><label class="f" for="f-data">Data da portaria</label><input class="in" id="f-data" type="date" value="${esc(F.data)}"></div>
-   <div class="c4"><label class="f" for="f-resp">Responsável pela portaria <small>(quem está no acesso)</small></label>${adminEd ? `<select class="in" id="f-resp">${respOpts().map(r => `<option ${r === F.resp ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__o">＋ Outro nome…</option></select><input class="in" id="f-resp-o" placeholder="Digite o nome do responsável" style="margin-top:8px;display:none">` : `<input class="in" id="f-resp" value="${esc(F.resp)}" readonly>`}<div class="hint">${adminEd ? 'Como administradora, você pode lançar a portaria em nome de outra pessoa.' : ''}</div></div>
+   <div class="c4"><label class="f" for="f-resp">Responsável pela portaria <small>(quem está no acesso)</small></label>${adminEd ? `<select class="in" id="f-resp">${respOpts().map(r => `<option ${r === F.resp ? 'selected' : ''}>${esc(r)}</option>`).join('')}<option value="__o">＋ Outro nome…</option></select><input class="in" id="f-resp-o" placeholder="Digite o nome do responsável" style="margin-top:8px;display:none">` : `<input class="in" id="f-resp" value="${esc(F.resp)}" readonly>`}<input class="in" id="f-setor" list="stl" placeholder="Setor do responsável" value="${esc(F.setor)}" style="margin-top:8px" ${adminEd ? '' : 'readonly'}><datalist id="stl">${setorList().map(x => `<option value="${esc(x)}">`).join('')}</datalist><div class="hint">${adminEd ? 'Escolha o responsável cadastrado; o setor vem junto e pode ser ajustado.' : ''}</div></div>
    <div class="c12"><label class="f" for="f-ass">Assunto da portaria</label><textarea class="in" id="f-ass" placeholder="Ex.: Nomeia servidor para o cargo de…">${esc(F.assunto)}</textarea></div>
-   <div class="c12"><label class="f">Servidor(es) citado(s) <small>— digite o nome e tecle Enter. Facilita a busca.</small></label><div class="tagbox" id="tagbox"><span id="tags"></span><input id="f-sv" list="svl" placeholder="Adicionar nome…" autocomplete="off"></div><datalist id="svl">${[...new Set(S.items.flatMap(p => p.servidores || []))].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(s => `<option value="${esc(s)}">`).join('')}</datalist></div>
+   <div class="c12"><label class="f">Servidor(es) envolvido(s) <small>— quantos forem citados na portaria. Digite o nome e clique em Adicionar (ou tecle Enter). Facilita a busca.</small></label><div class="tagbox" id="tagbox"><span id="tags" style="display:contents"></span><input id="f-sv" list="svl" placeholder="Nome do servidor…" autocomplete="off"><button type="button" class="btn b2 sm" id="f-svadd">${I('plus')}Adicionar</button></div><datalist id="svl">${[...new Set(S.items.flatMap(p => p.servidores || []))].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(s => `<option value="${esc(s)}">`).join('')}</datalist></div>
    <div class="c4"><label class="f">Assinada pelo responsável?</label><div class="seg" data-k="assinada"><button type="button" data-v="Sim">Sim</button><button type="button" data-v="Não">Não</button></div></div>
    <div class="c4"><label class="f">Entregue ao RH? <small>${canRH() ? '' : '(controle do RH)'}</small></label><div class="seg" data-k="rh"><button type="button" data-v="Sim" ${canRH() ? '' : 'disabled'}>Sim</button><button type="button" data-v="Não" ${canRH() ? '' : 'disabled'}>Não</button></div></div>
    <div class="c4"><label class="f" for="f-link">Link da publicação <small>(depois de publicada)</small></label><input class="in" id="f-link" placeholder="https://…" value="${esc(F.link)}"></div>
@@ -438,12 +440,13 @@ function bindForm() {
   g('f-seq').oninput = () => { F.seq = +g('f-seq').value; hint(); }; g('f-ano').onchange = () => { F.ano = +g('f-ano').value; if (!F.id) { F.seq = nextFree(F.ano); g('f-seq').value = F.seq; } hint(); };
   g('free').onclick = e => { const b = e.target.closest('button'); if (b) { F.seq = +b.dataset.s; g('f-seq').value = F.seq; hint(); } };
   ['data', 'link', 'obs'].forEach(k => g('f-' + k).oninput = e => F[k] = e.target.value);
-  if (isAdmin()) { const rs = g('f-resp'), ro = g('f-resp-o'); rs.onchange = () => { if (rs.value === '__o') { ro.style.display = 'block'; ro.focus(); F.resp = ro.value.trim(); } else { ro.style.display = 'none'; F.resp = rs.value; } }; ro.oninput = () => F.resp = ro.value.trim(); } g('f-ass').oninput = e => F.assunto = e.target.value;
+  if (isAdmin()) { const rs = g('f-resp'), ro = g('f-resp-o'); rs.onchange = () => { if (rs.value === '__o') { ro.style.display = 'block'; ro.focus(); F.resp = ro.value.trim(); } else { ro.style.display = 'none'; F.resp = rs.value; F.setor = respSetor(rs.value) || F.setor; g('f-setor').value = F.setor; } }; ro.oninput = () => F.resp = ro.value.trim(); g('f-setor').oninput = e => F.setor = e.target.value; } g('f-ass').oninput = e => F.assunto = e.target.value;
   g('f-data').onchange = e => { F.data = e.target.value; };
   $$('.seg').forEach(s => s.onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled) { F[s.dataset.k] = b.dataset.v; segs(); } });
-  const addSv = () => { const v = g('f-sv').value.replace(/,$/, '').trim(); if (v && !F.servidores.includes(v)) F.servidores.push(v); g('f-sv').value = ''; tags(); };
+  const addSv = () => { g('f-sv').value.split(/[;\n,]+/).map(x => x.trim()).filter(Boolean).forEach(v => { if (!F.servidores.includes(v)) F.servidores.push(v); }); g('f-sv').value = ''; tags(); };
+  g('f-svadd').onclick = () => { addSv(); g('f-sv').focus(); };
   g('f-sv').onkeydown = e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSv(); } else if (e.key === 'Backspace' && !g('f-sv').value) { F.servidores.pop(); tags(); } };
-  g('f-sv').onchange = addSv; g('f-sv').onblur = addSv;
+  g('f-sv').onchange = addSv;
   g('tags').onclick = e => { const b = e.target.closest('button'); if (b) { F.servidores.splice(+b.dataset.r, 1); tags(); } };
   ['assinada', 'publicacao'].forEach(kind => {
     const dz = g('dz-' + kind), fi = g('fi-' + kind), txt = g('dzt-' + kind), orig = txt.textContent;
@@ -461,13 +464,15 @@ function bindForm() {
   });
   g('f-save').onclick = saveForm;
 }
-function respOpts() { const F = S.form || {}; return [...new Set([S.user.nome, ...(S.users || []).filter(u => u.ativo).map(u => u.nome), ...(S.resps || []), ...S.items.map(p => p.resp).filter(Boolean), F.resp].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); }
+function respOpts() { const F = S.form || {}; return [...new Set([S.user.role === 'admin' ? S.user.nome : '', ...(S.users || []).filter(u => u.ativo).map(u => u.nome), ...(S.resps || []).map(r => r.nome), F.id ? F.resp : ''].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); }
+function respSetor(n) { const u = (S.users || []).find(x => x.nome === n), r = (S.resps || []).find(x => x.nome === n); return (r && r.setor) || (u && u.setor) || ''; }
+const setorList = () => [...new Set([...(S.users || []).map(u => u.setor), ...(S.resps || []).map(r => r.setor), ...S.items.map(p => p.setor)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 function upsert(it) { const i = S.items.findIndex(x => x.id === it.id); delete it._b; i < 0 ? S.items.push(it) : (S.items[i] = it); }
 async function saveForm() {
   const F = S.form, b = $('#f-save'); if (!F.assunto.trim()) return toast('Informe o assunto da portaria.', true); if (!(F.seq >= 1)) return toast('Informe o número da portaria.', true);
   b.disabled = true; b.innerHTML = '<span class="spin"></span>Salvando…';
   try {
-    const body = { seq: F.seq, ano: F.ano, data: F.data, resp: F.resp, rh: F.rh, assunto: F.assunto, assinada: F.assinada, link: F.link, servidores: F.servidores, obs: F.obs };
+    const body = { seq: F.seq, ano: F.ano, data: F.data, resp: F.resp, setor: F.setor, rh: F.rh, assunto: F.assunto, assinada: F.assinada, link: F.link, servidores: F.servidores, obs: F.obs };
     let it = F.id ? (await api('PUT', 'portarias/' + F.id, body)).item : (await api('POST', 'portarias', body)).item;
     upsert(it);
     for (const k of ['assinada', 'publicacao']) if (F.files[k]) { try { const r = await api('PUT', `portarias/${it.id}/file/${k}`, F.files[k], { raw: true, name: F.files[k].name }); it = r.item; upsert(it); } catch (e) { toast(`Portaria salva, mas o PDF não subiu: ${e.message}`, true); } }
@@ -508,13 +513,13 @@ function admHtml() {
   let body = '';
   if (S.adm === 'users') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Cadastrar usuário</h3><p style="color:var(--mu);margin:0 0 16px">Quem preenche portarias e quem só consulta. Cada pessoa usa o próprio login e senha.</p>
   <div class="fgrid"><div class="c3"><label class="f">Nome completo</label><input class="in" id="u-n"></div><div class="c3"><label class="f">Login</label><input class="in" id="u-l" autocapitalize="none" placeholder="ex.: maria.silva"></div><div class="c3"><label class="f">Senha inicial</label><input class="in" id="u-s" type="text" placeholder="mín. 6 caracteres"></div>
-  <div class="c3"><label class="f">Perfil</label><select class="in" id="u-r"><option value="consulta">Somente consulta (busca e download)</option><option value="editor">Preenche portarias</option><option value="admin">Administrador</option></select></div>
+  <div class="c3"><label class="f">Setor</label><input class="in" id="u-t" list="stl2" placeholder="ex.: Recursos Humanos"><datalist id="stl2">${setorList().map(x => `<option value="${esc(x)}">`).join('')}</datalist></div><div class="c3"><label class="f">Perfil</label><select class="in" id="u-r"><option value="consulta">Somente consulta (busca e download)</option><option value="editor">Preenche portarias</option><option value="admin">Administrador</option></select></div>
   <div class="c12"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="u-h" style="width:18px;height:18px;accent-color:#117a4d"> Controle do RH (pode marcar “entregue ao RH”)</label></div></div>
   <div class="mact"><button class="btn b1" id="u-add">${I('plus')}Cadastrar usuário</button></div></div>
-  <div class="card rise ox" style="margin-top:16px;--i:2"><table class="t"><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Último acesso</th><th></th></tr>${(S.users || []).map(u => `<tr class="${u.ativo ? '' : 'off'}"><td><b>${esc(u.nome)}</b>${u.rh ? ' <span class="role editor">RH</span>' : ''}${u.ativo ? '' : ' <span class="role consulta">desativado</span>'}</td><td>${esc(u.login)}</td><td><span class="role ${u.role}">${ROLEN[u.role]}</span></td><td>${u.ultimo ? fmtT(u.ultimo) : '—'}</td><td style="text-align:right;white-space:nowrap"><button class="btn b2 sm" data-eu="${u.id}">${I('edit')}Editar</button> ${u.id !== S.user.id ? `<button class="btn bd sm" data-du="${u.id}">${I('trash')}</button>` : ''}</td></tr>`).join('')}</table></div>`;
-  if (S.adm === 'resp') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Responsáveis pelas portarias</h3><p style="color:var(--mu);margin:0 0 14px">Cadastre aqui as pessoas que podem ser indicadas como responsáveis, mesmo que não tenham login. Elas aparecem na lista ao cadastrar uma portaria. Quem tem login e quem já aparece em portarias antigas entra na lista automaticamente.</p>
-  <div style="display:flex;gap:10px;flex-wrap:wrap"><input class="in" id="rs-n" placeholder="Nome do responsável" style="flex:1;min-width:220px"><button class="btn b1" id="rs-add">${I('plus')}Adicionar</button></div>
-  <div class="chips" style="margin-top:16px">${(S.resps || []).map((r, i) => `<span class="chip"><i>${esc(initials(r))}</i>${esc(r)}<button type="button" data-rr="${i}" aria-label="Remover">×</button></span>`).join('') || '<span style="color:var(--mu)">Nenhum responsável extra cadastrado ainda.</span>'}</div></div>`;
+  <div class="card rise ox" style="margin-top:16px;--i:2"><table class="t"><tr><th>Nome</th><th>Login</th><th>Setor</th><th>Perfil</th><th>Último acesso</th><th></th></tr>${(S.users || []).map(u => `<tr class="${u.ativo ? '' : 'off'}"><td><b>${esc(u.nome)}</b>${u.rh ? ' <span class="role editor">RH</span>' : ''}${u.ativo ? '' : ' <span class="role consulta">desativado</span>'}</td><td>${esc(u.login)}</td><td>${esc(u.setor || '—')}</td><td><span class="role ${u.role}">${ROLEN[u.role]}</span></td><td>${u.ultimo ? fmtT(u.ultimo) : '—'}</td><td style="text-align:right;white-space:nowrap"><button class="btn b2 sm" data-eu="${u.id}">${I('edit')}Editar</button> ${u.id !== S.user.id ? `<button class="btn bd sm" data-du="${u.id}">${I('trash')}</button>` : ''}</td></tr>`).join('')}</table></div>`;
+  if (S.adm === 'resp') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Responsáveis pelas portarias</h3><p style="color:var(--mu);margin:0 0 14px">Cadastre aqui as pessoas que podem ser indicadas como responsáveis, mesmo que não tenham login. Elas aparecem na lista ao cadastrar uma portaria. Quem tem login também entra na lista. Cadastrando de novo o mesmo nome, o setor é atualizado.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap"><input class="in" id="rs-n" placeholder="Nome do responsável" style="flex:1;min-width:220px"><input class="in" id="rs-t" list="stl2" placeholder="Setor dessa pessoa" style="flex:1;min-width:200px"><datalist id="stl2">${setorList().map(x => `<option value="${esc(x)}">`).join('')}</datalist><button class="btn b1" id="rs-add">${I('plus')}Adicionar</button></div>
+  <div class="chips" style="margin-top:16px">${(S.resps || []).map((r, i) => `<span class="chip"><i>${esc(initials(r.nome))}</i>${esc(r.nome)}${r.setor ? ' · ' + esc(r.setor) : ''}<button type="button" data-rr="${i}" aria-label="Remover">×</button></span>`).join('') || '<span style="color:var(--mu)">Nenhum responsável extra cadastrado ainda.</span>'}</div></div>`;
   if (S.adm === 'import') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Importar portarias já cadastradas</h3><p style="color:var(--mu);margin:0 0 14px">Use o <b>Backup</b> do Sistema da Secretaria (aquele texto que você copia no botão Backup) ou um arquivo .json/.txt salvo dele. As portarias são aproveitadas com número, data, assunto, servidor, responsável, RH, assinatura e link. Números que já existem aqui são mantidos.</p>
   <label class="f">Escolher arquivo</label><input type="file" id="im-f" accept=".json,.txt,application/json,text/plain" class="in"><div style="height:12px"></div><label class="f">…ou cole o texto do Backup aqui</label><textarea class="in" id="im-t" rows="5" placeholder='{"portarias":[…]}'></textarea>
   <div id="im-pv" style="margin-top:14px"></div></div>`;
@@ -524,21 +529,21 @@ function admHtml() {
 }
 async function admGo() { if (S.adm === 'log') S.log = null; render(); await loadAdm(); if (S.tab === 'admin') render(); }
 function userModal(u) {
-  const o = modal(`<h3>Editar usuário</h3><div class="fgrid" style="margin-top:14px"><div class="c12"><label class="f">Nome</label><input class="in" id="e-n" value="${esc(u.nome)}"></div><div class="c12"><label class="f">Perfil</label><select class="in" id="e-r">${Object.entries(ROLEN).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+  const o = modal(`<h3>Editar usuário</h3><div class="fgrid" style="margin-top:14px"><div class="c12"><label class="f">Nome</label><input class="in" id="e-n" value="${esc(u.nome)}"></div><div class="c12"><label class="f">Setor</label><input class="in" id="e-t" list="stl2" value="${esc(u.setor || '')}"></div><div class="c12"><label class="f">Perfil</label><select class="in" id="e-r">${Object.entries(ROLEN).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
   <div class="c12"><label class="f">Nova senha <small>(deixe em branco para manter a atual)</small></label><input class="in" id="e-s" placeholder="mín. 6 caracteres"></div>
   <div class="c12"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="e-h" ${u.rh ? 'checked' : ''} style="width:18px;height:18px;accent-color:#117a4d"> Controle do RH</label></div>
   <div class="c12"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="e-a" ${u.ativo ? 'checked' : ''} style="width:18px;height:18px;accent-color:#117a4d"> Acesso ativo</label></div></div>
   <div class="mact"><button class="btn b1" id="e-ok">Salvar</button><button class="btn b3" id="e-c">Cancelar</button></div>`);
   $('#e-c', o).onclick = () => o.remove();
-  $('#e-ok', o).onclick = async () => { try { const b = { nome: $('#e-n', o).value, role: $('#e-r', o).value, rh: $('#e-h', o).checked, ativo: $('#e-a', o).checked }; if ($('#e-s', o).value) b.senha = $('#e-s', o).value; const r = await api('PUT', 'users/' + u.id, b); S.users = S.users.map(x => x.id === u.id ? r.user : x); o.remove(); toast('Usuário atualizado.'); render(); } catch (e) { toast(e.message, true); } };
+  $('#e-ok', o).onclick = async () => { try { const b = { nome: $('#e-n', o).value, setor: $('#e-t', o).value, role: $('#e-r', o).value, rh: $('#e-h', o).checked, ativo: $('#e-a', o).checked }; if ($('#e-s', o).value) b.senha = $('#e-s', o).value; const r = await api('PUT', 'users/' + u.id, b); S.users = S.users.map(x => x.id === u.id ? r.user : x); o.remove(); toast('Usuário atualizado.'); render(); } catch (e) { toast(e.message, true); } };
 }
 function bindAdm() {
   const g = id => $('#' + id);
-  if (g('u-add')) g('u-add').onclick = async () => { try { const r = await api('POST', 'users', { nome: g('u-n').value, login: g('u-l').value, senha: g('u-s').value, role: g('u-r').value, rh: g('u-h').checked }); S.users.push(r.user); toast('Usuário cadastrado. Passe o login e a senha para a pessoa.'); render(); } catch (e) { toast(e.message, true); } };
+  if (g('u-add')) g('u-add').onclick = async () => { try { const r = await api('POST', 'users', { nome: g('u-n').value, login: g('u-l').value, senha: g('u-s').value, setor: g('u-t').value, role: g('u-r').value, rh: g('u-h').checked }); S.users.push(r.user); toast('Usuário cadastrado. Passe o login e a senha para a pessoa.'); render(); } catch (e) { toast(e.message, true); } };
   $$('[data-eu]').forEach(b => b.onclick = () => userModal(S.users.find(u => u.id === b.dataset.eu)));
   $$('[data-du]').forEach(b => b.onclick = async () => { const u = S.users.find(x => x.id === b.dataset.du); if (confirm(`Excluir o acesso de ${u.nome}?`)) { try { await api('DELETE', 'users/' + u.id); S.users = S.users.filter(x => x.id !== u.id); toast('Usuário excluído.'); render(); } catch (e) { toast(e.message, true); } } });
   const saveR = async l => { try { S.resps = (await api('PUT', 'resps', { list: l })).list; toast('Lista de responsáveis atualizada.'); render(); } catch (e) { toast(e.message, true); } };
-  if (g('rs-add')) { const go1 = () => { const v = g('rs-n').value.trim(); if (v) saveR([...S.resps, v]); }; g('rs-add').onclick = go1; g('rs-n').onkeydown = e => { if (e.key === 'Enter') go1(); }; }
+  if (g('rs-add')) { const go1 = () => { const v = g('rs-n').value.trim(); if (v) saveR([...S.resps.filter(r => r.nome !== v), { nome: v, setor: g('rs-t').value.trim() }]); }; g('rs-add').onclick = go1; g('rs-n').onkeydown = e => { if (e.key === 'Enter') go1(); }; }
   $$('[data-rr]').forEach(b => b.onclick = () => saveR(S.resps.filter((_, i) => i !== +b.dataset.rr)));
   if (g('bk-dl')) g('bk-dl').onclick = () => save(new Blob([JSON.stringify({ geradoEm: new Date().toISOString(), portarias: S.items.map(({ _b, ...p }) => p) }, null, 1)], { type: 'application/json' }), `portarias-${new Date().toISOString().slice(0, 10)}.json`);
   if (g('im-f')) {
