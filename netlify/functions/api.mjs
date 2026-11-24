@@ -21,11 +21,11 @@ async function secret() {
   return s;
 }
 const hashPw = (pw, salt) => new Promise((res, rej) => crypto.scrypt(pw, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex'))));
-async function mkUser({ nome, login, senha, role, rh }) {
+async function mkUser({ nome, login, senha, role, rh, setor }) {
   const salt = crypto.randomBytes(16).toString('hex');
-  return { id: crypto.randomUUID(), nome: str(nome, 80), login: str(login, 40).toLowerCase(), role, rh: !!rh, ativo: true, salt, hash: await hashPw(senha, salt), criado: new Date().toISOString() };
+  return { id: crypto.randomUUID(), nome: str(nome, 80), login: str(login, 40).toLowerCase(), setor: str(setor, 80), role, rh: !!rh, ativo: true, salt, hash: await hashPw(senha, salt), criado: new Date().toISOString() };
 }
-const pub = u => ({ id: u.id, nome: u.nome, login: u.login, role: u.role, rh: !!u.rh, ativo: u.ativo !== false, criado: u.criado, ultimo: u.ultimo || null });
+const pub = u => ({ id: u.id, nome: u.nome, login: u.login, setor: u.setor || '', role: u.role, rh: !!u.rh, ativo: u.ativo !== false, criado: u.criado, ultimo: u.ultimo || null });
 
 async function sign(uid) {
   const p = b64u(JSON.stringify({ u: uid, e: Date.now() + TTL }));
@@ -56,7 +56,9 @@ function cleanP(b, base = {}, u, canRH) {
   if (!(seq >= 1 && seq <= 99999)) throw new Error('Número inválido.');
   p.seq = seq; p.ano = ano; p.numero = pad(seq, ano);
   p.data = /^\d{4}-\d{2}-\d{2}$/.test(b.data || '') ? b.data : '';
-  p.resp = str(b.resp, 100) || (base.resp || u.nome);
+  const adm = u.role === 'admin';
+  p.resp = adm ? (str(b.resp, 100) || base.resp || u.nome) : (base.resp || u.nome);
+  p.setor = adm ? str(b.setor, 100) : (base.resp ? (base.setor || '') : (u.setor || ''));
   p.assunto = str(b.assunto, 1500);
   if (!p.assunto) throw new Error('Informe o assunto da portaria.');
   p.assinada = b.assinada === 'Sim' ? 'Sim' : 'Não';
@@ -88,6 +90,11 @@ function parseLegacy(r) {
   };
 }
 
+function normR(l) {
+  const m = new Map();
+  (Array.isArray(l) ? l : []).forEach(x => { const o = typeof x === 'string' ? { nome: x, setor: '' } : x || {}; const n = str(o.nome, 100); if (n) m.set(n, { nome: n, setor: str(o.setor, 80) }); });
+  return [...m.values()].slice(0, 300).sort((a, c) => a.nome.localeCompare(c.nome, 'pt-BR'));
+}
 async function readJSON(req) { try { return await req.json(); } catch { return {}; } }
 
 export default async (req) => {
@@ -202,7 +209,7 @@ export default async (req) => {
       }
     }
 
-    if (path[0] === 'resps' && me === 'GET') { const r = await getJSON('resps', { list: [] }); return J({ list: r.list }); }
+    if (path[0] === 'resps' && me === 'GET') { const r = await getJSON('resps', { list: [] }); return J({ list: normR(r.list) }); }
 
     // ---------- administração ----------
     if (!isAdmin) return E('Acesso restrito ao administrador.', 403);
@@ -215,7 +222,7 @@ export default async (req) => {
         if (str(b.senha, 100).length < 6) return E('A senha precisa ter ao menos 6 caracteres.');
         if (!ROLES.includes(b.role)) return E('Perfil inválido.');
         if (!/^[a-z0-9._-]{3,40}$/i.test(str(b.login, 40))) return E('O login deve ter de 3 a 40 letras, números, ponto, hífen ou sublinhado.');
-        const nu = await mkUser({ nome: b.nome, login: b.login, senha: str(b.senha, 100), role: b.role, rh: b.rh });
+        const nu = await mkUser({ nome: b.nome, login: b.login, senha: str(b.senha, 100), role: b.role, rh: b.rh, setor: b.setor });
         const r = await update('users', { list: [] }, c => { if (c.list.some(x => x.login === nu.login)) throw new Error('Esse login já existe.'); c.list.push(nu); return nu; });
         await log(u, `Cadastrou o usuário ${r.login} (${r.role})`);
         return J({ user: pub(r) }, 201);
@@ -227,6 +234,7 @@ export default async (req) => {
           if (b.nome !== undefined) x.nome = str(b.nome, 80) || x.nome;
           if (b.role !== undefined) { if (!ROLES.includes(b.role)) throw new Error('Perfil inválido.'); x.role = b.role; }
           if (b.rh !== undefined) x.rh = !!b.rh;
+          if (b.setor !== undefined) x.setor = str(b.setor, 80);
           if (b.ativo !== undefined) x.ativo = !!b.ativo;
           if (b.senha) { if (str(b.senha, 100).length < 6) throw new Error('A senha precisa ter ao menos 6 caracteres.'); x.salt = crypto.randomBytes(16).toString('hex'); x.hash = await hashPw(str(b.senha, 100), x.salt); }
           if (!c.list.some(y => y.role === 'admin' && y.ativo !== false)) throw new Error('Precisa existir ao menos um administrador ativo.');
@@ -244,7 +252,7 @@ export default async (req) => {
     }
     if (path[0] === 'resps' && me === 'PUT') {
       const b = await readJSON(req);
-      const list = [...new Set((Array.isArray(b.list) ? b.list : []).map(x => str(x, 100)).filter(Boolean))].slice(0, 200).sort((a, c) => a.localeCompare(c, 'pt-BR'));
+      const list = normR(b.list);
       await update('resps', { list: [] }, c => { c.list = list; });
       await log(u, 'Atualizou a lista de responsáveis');
       return J({ list });
