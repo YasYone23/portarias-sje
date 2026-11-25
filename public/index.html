@@ -205,6 +205,18 @@ footer{text-align:center;color:var(--mu);font-size:12.5px;padding:10px 16px 30px
  .me{width:100%;justify-content:space-between}
  .eyebrow{font-size:10px;letter-spacing:.08em;padding:4px 10px}.kpi b{font-size:26px}.kpi{padding:12px 14px}.hero-in{padding-bottom:16px}.logo-card{padding:8px 12px;border-radius:18px}.logo-card img{height:64px}.tab{padding:11px 14px;font-size:13.5px}main{padding-top:16px}
 }
+
+.tab .ts{display:none}
+@media(max-width:520px){
+ .tools{grid-template-columns:1fr}.tools .search{grid-column:auto}
+ .eyebrow{display:none}h1{margin-top:4px}.hero-in{gap:12px;padding-bottom:12px}
+ .tabs{margin:0 -16px;padding:0 10px;-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);mask-image:linear-gradient(90deg,#000 88%,transparent)}
+ .tab{padding:11px 12px;gap:6px}.tab .tl{display:none}.tab .ts{display:inline}
+ .qtop>.kpis{width:100%;grid-template-columns:1fr 1fr}.qtop .kpi b{font-size:22px}
+ .board{grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:7px}.cell{font-size:14px}
+ .card{padding:16px}.md{padding:18px;border-radius:18px}.count{font-size:12.5px}
+ .acts .ic{width:40px;height:40px}.btn{padding:12px 16px}
+}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
 @media print{.hero,.tools,.acts,#toast{display:none}}
 </style>
@@ -237,17 +249,22 @@ function countUp(el, to) { const T = 700, t0 = performance.now(); if (matchMedia
 const store = { get: k => { try { return localStorage.getItem(k) } catch { return null } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v) } catch { } } };
 
 /* ===================== estado e API ===================== */
-const S = { token: store.get('gp_tk'), user: null, items: [], tab: 'consulta', q: '', ano: '', sit: '', resp: '', setor: '', rh: '', shown: 30, qano: new Date().getFullYear(), adm: 'users', users: null, log: null, form: null, resps: [] };
+const S = { token: store.get('gp_tk'), user: null, items: [], tab: 'consulta', q: '', ano: '', sit: '', resp: '', setor: '', rh: '', shown: 30, qano: new Date().getFullYear(), adm: 'users', users: null, log: null, form: null, resps: [], ord: store.get('gp_ord') === 'desc' ? 'desc' : 'asc' };
 async function api(method, path, body, opt = {}) {
   const h = {}; if (S.token) h.authorization = 'Bearer ' + S.token;
   let b; if (opt.raw) { b = body; h['x-filename'] = encodeURIComponent(opt.name || 'arquivo.pdf'); h['content-type'] = 'application/pdf'; } else if (body !== undefined) { b = JSON.stringify(body); h['content-type'] = 'application/json'; }
   let r; try { r = await fetch('/api/' + path, { method, headers: h, body: b }); } catch { throw new Error('Sem conexão com o servidor. Verifique a internet.'); }
+  const nt = r.headers.get('x-token'); if (nt && S.token && r.ok) { S.token = nt; store.set('gp_tk', nt); S.last = Date.now(); }
   if (opt.blob) { if (!r.ok) throw new Error('Arquivo não encontrado.'); return r.blob(); }
   let j = {}; try { j = await r.json(); } catch { }
+  if ((r.status === 401 || r.status === 403) && !j.erro) throw new Error('O acesso foi bloqueado antes de chegar ao sistema (site ainda privado no Netlify ou proteção do Netlify expirada). Recarregue a página; se persistir, o site precisa estar como Público.');
   if (r.status === 401 && S.token) { logout(true); throw new Error(j.erro || 'Sessão expirada.'); }
   if (!r.ok) throw new Error(j.erro || 'Não foi possível concluir (' + r.status + ').');
   return j;
 }
+S.last = Date.now();
+['click', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, () => { S.last = Date.now(); }, { passive: true }));
+setInterval(() => { if (S.token && Date.now() - S.last > 3600000) logout(true); }, 30000);
 function logout(expired) { store.set('gp_tk', null); S.token = null; S.user = null; S.items = []; S.users = null; S.log = null; render(); if (expired) toast('Sessão expirada. Entre novamente.', true); }
 
 /* ===================== regras ===================== */
@@ -272,7 +289,7 @@ function filtered() {
     if (S.rh && p.rh !== S.rh) return false;
     if (q.length) { const b = p._b || (p._b = blob(p)); if (!q.every(t => b.includes(t))) return false; }
     return true;
-  }).sort(cmp);
+  }).sort((a, b) => S.ord === 'desc' ? cmp(b, a) : cmp(a, b));
 }
 function nextFree(ano) { const u = S.items.filter(p => p.ano == ano).map(p => p.seq); return (u.length ? Math.max(...u) : 0) + 1; }
 function gaps(ano) { const u = new Set(S.items.filter(p => p.ano == ano).map(p => p.seq)), m = Math.max(0, ...u), g = []; for (let i = 1; i < m; i++) if (!u.has(i)) g.push(i); return g; }
@@ -286,8 +303,8 @@ function hero(inner) {
   </div>${inner || ''}</div></header>`;
 }
 function tabsHtml() {
-  const T = [['consulta', 'search', 'Consultar portarias'], ...(canEdit() ? [['nova', 'plus', S.form && S.form.id ? 'Editando portaria' : 'Nova portaria']] : []), ['quadro', 'grid', 'Quadro de números'], ...(isAdmin() ? [['admin', 'shield', 'Administração']] : [])];
-  return `<nav class="tabs">${T.map(t => `<button class="tab ${S.tab === t[0] ? 'on' : ''}" onclick="go('${t[0]}')">${I(t[1])}${t[2]}${t[0] === 'consulta' ? `<span class="n">${S.items.length}</span>` : ''}</button>`).join('')}</nav>`;
+  const T = [['consulta', 'search', 'Consultar portarias', 'Consultar'], ...(canEdit() ? [['nova', 'plus', S.form && S.form.id ? 'Editando portaria' : 'Nova portaria', S.form && S.form.id ? 'Editando' : 'Nova']] : []), ['quadro', 'grid', 'Quadro de números', 'Quadro'], ...(isAdmin() ? [['admin', 'shield', 'Administração', 'Admin']] : [])];
+  return `<nav class="tabs">${T.map(t => `<button class="tab ${S.tab === t[0] ? 'on' : ''}" onclick="go('${t[0]}')">${I(t[1])}<span class="tl">${t[2]}</span><span class="ts">${t[3]}</span>${t[0] === 'consulta' ? `<span class="n">${S.items.length}</span>` : ''}</button>`).join('')}</nav>`;
 }
 function go(t) { if (t === 'nova' && !(S.form)) S.form = newForm(); S.tab = t; render(); scrollTo({ top: 0 }); }
 
@@ -328,7 +345,7 @@ function kpiHtml() {
   return `<div class="kpis">${K.map((k, i) => `<button class="kpi ${k[2]} rise" style="--i:${i}" onclick="_kp[${i}]();S.shown=30;render()"><small>${k[0]}</small><b data-n="${k[1]}">0</b></button>`).join('')}</div>`;
 }
 function consultaHtml() {
-  const resps = [...new Set(S.items.map(p => p.resp).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')), setores = [...new Set(S.items.map(p => p.setor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const resps = allResps(), setores = [...new Set(S.items.map(p => p.setor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   return `${kpiHtml()}<div class="card rise" style="--i:3"><div class="tools">
   <div class="search"><span>${I('search')}</span><input class="in" id="q" placeholder="Buscar número, assunto, servidor…" value="${esc(S.q)}" autocomplete="off"></div>
   <select class="in" id="fa" aria-label="Ano"><option value="">Todos os anos</option>${years().map(y => `<option ${S.ano == y ? 'selected' : ''}>${y}</option>`).join('')}</select>
@@ -336,12 +353,13 @@ function consultaHtml() {
   <select class="in" id="fr" aria-label="Responsável"><option value="">Todos os responsáveis</option>${resps.map(r => `<option ${S.resp === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
   <select class="in" id="fz" aria-label="Setor"><option value="">Todos os setores</option>${setores.map(r => `<option ${S.setor === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
   <button class="btn b3" id="clr">${I('x')}Limpar</button></div></div>
-  <div class="count"><span id="cnt"></span><span style="display:flex;gap:8px"><button class="btn b3 sm" onclick="exportCsv()">${I('dl')}Exportar lista (CSV)</button></span></div><div id="list"></div>`;
+  <div class="count"><span id="cnt"></span><span style="display:flex;gap:8px;flex-wrap:wrap"><select class="in sm" id="ord" aria-label="Ordem" style="width:auto;padding:7px 34px 7px 12px;font-weight:700"><option value="asc" ${S.ord === 'asc' ? 'selected' : ''}>↑ Ordem crescente (1, 2, 3…)</option><option value="desc" ${S.ord === 'desc' ? 'selected' : ''}>↓ Ordem decrescente (mais recentes primeiro)</option></select><button class="btn b3 sm" onclick="exportCsv()">${I('dl')}Exportar lista (CSV)</button></span></div><div id="list"></div>`;
 }
 function bindConsulta() {
   const upd = () => { S.shown = 30; renderList(); };
   $('#q').oninput = e => { S.q = e.target.value; upd(); };
   $('#fa').onchange = e => { S.ano = e.target.value; upd(); }; $('#fs').onchange = e => { S.sit = e.target.value; upd(); }; $('#fr').onchange = e => { S.resp = e.target.value; upd(); }; $('#fz').onchange = e => { S.setor = e.target.value; upd(); };
+  $('#ord').onchange = e => { S.ord = e.target.value; store.set('gp_ord', S.ord); S.shown = 30; renderList(); };
   $('#clr').onclick = () => { S.q = S.ano = S.sit = S.resp = S.setor = S.rh = ''; S.shown = 30; render(); };
   $$('.kpi b').forEach(b => countUp(b, +b.dataset.n));
   renderList();
@@ -362,7 +380,7 @@ function rowHtml(p, i) {
 }
 function renderList() {
   const l = filtered(), el = $('#list'); if (!el) return;
-  $('#cnt').innerHTML = `<b>${l.length}</b> portaria(s) encontrada(s) · ordem crescente de número`;
+  $('#cnt').innerHTML = `<b>${l.length}</b> portaria(s) encontrada(s) · ordem ${S.ord === 'desc' ? 'decrescente' : 'crescente'} de número`;
   el.innerHTML = l.length ? l.slice(0, S.shown).map(rowHtml).join('') + (l.length > S.shown ? `<div style="text-align:center;margin-top:14px"><button class="btn b2" onclick="S.shown+=40;renderList()">Mostrar mais (${l.length - S.shown})</button></div>` : '')
     : `<div class="card empty">${I('search')}<div><b>Nenhuma portaria encontrada</b></div><div>Tente outro termo ou limpe os filtros.</div></div>`;
 }
@@ -464,7 +482,8 @@ function bindForm() {
   });
   g('f-save').onclick = saveForm;
 }
-function respOpts() { const F = S.form || {}; return [...new Set([S.user.role === 'admin' ? S.user.nome : '', ...(S.users || []).filter(u => u.ativo).map(u => u.nome), ...(S.resps || []).map(r => r.nome), F.id ? F.resp : ''].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); }
+function respOpts() { const F = S.form || {}; return [...new Set([S.user.role === 'admin' ? S.user.nome : '', ...(S.users || []).filter(u => u.ativo).map(u => u.nome), ...(S.resps || []).filter(r => r.ativo !== false).map(r => r.nome), F.id ? F.resp : ''].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')); }
+const allResps = () => [...new Set([...(S.users || []).map(u => u.nome), ...(S.resps || []).map(r => r.nome), S.resp].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 function respSetor(n) { const u = (S.users || []).find(x => x.nome === n), r = (S.resps || []).find(x => x.nome === n); return (r && r.setor) || (u && u.setor) || ''; }
 const setorList = () => [...new Set([...(S.users || []).map(u => u.setor), ...(S.resps || []).map(r => r.setor), ...S.items.map(p => p.setor)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 function upsert(it) { const i = S.items.findIndex(x => x.id === it.id); delete it._b; i < 0 ? S.items.push(it) : (S.items[i] = it); }
@@ -486,7 +505,7 @@ async function saveForm() {
 function quadroHtml() {
   const y = S.qano, its = S.items.filter(p => p.ano === y), by = new Map(its.map(p => [p.seq, p])), max = Math.max(0, ...its.map(p => p.seq)), gp = gaps(y), nx = nextFree(y);
   const total = max + 6, pubN = its.filter(p => stKey(p) === 'pub').length, pct = its.length ? Math.round(pubN / its.length * 100) : 0;
-  const ys = [...new Set([new Date().getFullYear(), ...years()])].sort((a, b) => b - a);
+  const ys = [...new Set([new Date().getFullYear() + 1, new Date().getFullYear(), ...years(), y])].sort((a, b) => b - a);
   let cells = '';
   for (let n = 1; n <= total; n++) {
     const p = by.get(n), i = Math.min(n, 120);
@@ -517,9 +536,18 @@ function admHtml() {
   <div class="c12"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="u-h" style="width:18px;height:18px;accent-color:#117a4d"> Controle do RH (pode marcar “entregue ao RH”)</label></div></div>
   <div class="mact"><button class="btn b1" id="u-add">${I('plus')}Cadastrar usuário</button></div></div>
   <div class="card rise ox" style="margin-top:16px;--i:2"><table class="t"><tr><th>Nome</th><th>Login</th><th>Setor</th><th>Perfil</th><th>Último acesso</th><th></th></tr>${(S.users || []).map(u => `<tr class="${u.ativo ? '' : 'off'}"><td><b>${esc(u.nome)}</b>${u.rh ? ' <span class="role editor">RH</span>' : ''}${u.ativo ? '' : ' <span class="role consulta">desativado</span>'}</td><td>${esc(u.login)}</td><td>${esc(u.setor || '—')}</td><td><span class="role ${u.role}">${ROLEN[u.role]}</span></td><td>${u.ultimo ? fmtT(u.ultimo) : '—'}</td><td style="text-align:right;white-space:nowrap"><button class="btn b2 sm" data-eu="${u.id}">${I('edit')}Editar</button> ${u.id !== S.user.id ? `<button class="btn bd sm" data-du="${u.id}">${I('trash')}</button>` : ''}</td></tr>`).join('')}</table></div>`;
-  if (S.adm === 'resp') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Responsáveis pelas portarias</h3><p style="color:var(--mu);margin:0 0 14px">Cadastre aqui as pessoas que podem ser indicadas como responsáveis, mesmo que não tenham login. Elas aparecem na lista ao cadastrar uma portaria. Quem tem login também entra na lista. Cadastrando de novo o mesmo nome, o setor é atualizado.</p>
-  <div style="display:flex;gap:10px;flex-wrap:wrap"><input class="in" id="rs-n" placeholder="Nome do responsável" style="flex:1;min-width:220px"><input class="in" id="rs-t" list="stl2" placeholder="Setor dessa pessoa" style="flex:1;min-width:200px"><datalist id="stl2">${setorList().map(x => `<option value="${esc(x)}">`).join('')}</datalist><button class="btn b1" id="rs-add">${I('plus')}Adicionar</button></div>
-  <div class="chips" style="margin-top:16px">${(S.resps || []).map((r, i) => `<span class="chip"><i>${esc(initials(r.nome))}</i>${esc(r.nome)}${r.setor ? ' · ' + esc(r.setor) : ''}<button type="button" data-rr="${i}" aria-label="Remover">×</button></span>`).join('') || '<span style="color:var(--mu)">Nenhum responsável extra cadastrado ainda.</span>'}</div></div>`;
+  if (S.adm === 'resp') {
+    const reg = new Set(allResps()), cnt = {};
+    S.items.forEach(p => { if (p.resp && !reg.has(p.resp)) cnt[p.resp] = (cnt[p.resp] || 0) + 1; });
+    const sobras = Object.entries(cnt).sort((x, y) => x[0].localeCompare(y[0], 'pt-BR'));
+    body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Responsáveis pelas portarias</h3><p style="color:var(--mu);margin:0 0 14px">Só quem está cadastrado aqui (e os usuários com login) aparece na lista e no filtro de responsável. Marque <b>Antigo</b> para quem não é mais responsável: o nome continua no filtro, para consultar as portarias antigas, mas não aparece mais ao cadastrar portarias novas.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><input class="in" id="rs-n" placeholder="Nome do responsável" style="flex:1;min-width:200px"><input class="in" id="rs-t" list="stl2" placeholder="Setor dessa pessoa" style="flex:1;min-width:180px"><datalist id="stl2">${setorList().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+  <label style="display:flex;gap:6px;align-items:center;font-weight:600;white-space:nowrap"><input type="checkbox" id="rs-a" style="width:18px;height:18px;accent-color:#117a4d">Antigo</label><button class="btn b1" id="rs-add">${I('plus')}Adicionar</button></div>
+  <div class="chips" style="margin-top:16px">${(S.resps || []).map((r, i) => `<span class="chip" style="${r.ativo === false ? 'opacity:.7' : ''}"><i>${esc(initials(r.nome))}</i>${esc(r.nome)}${r.setor ? ' · ' + esc(r.setor) : ''}${r.ativo === false ? ' <em style="font-size:11px">(antigo)</em>' : ''}<button type="button" data-rt="${i}" title="${r.ativo === false ? 'Voltar a ser responsável atual' : 'Marcar como antigo'}" style="font-size:12px;margin-left:4px">${r.ativo === false ? '↺' : '⏸'}</button><button type="button" data-rr="${i}" aria-label="Remover">×</button></span>`).join('') || '<span style="color:var(--mu)">Nenhum responsável cadastrado aqui ainda.</span>'}</div></div>
+  ${sobras.length ? `<div class="card rise ox" style="margin-top:16px;--i:2"><h3 style="font-family:var(--hd);margin:0 0 4px">Nomes de portarias antigas que não estão cadastrados</h3><p style="color:var(--mu);margin:0 0 12px">Esses nomes aparecem nas portarias, mas não na lista nem no filtro. Troque cada um pelo nome correto (já cadastrado acima) ou cadastre-o como responsável antigo.</p>
+  <table class="t"><tr><th>Nome encontrado</th><th>Portarias</th><th>Trocar por</th><th></th></tr>${sobras.map(([n, c], i) => `<tr><td><b>${esc(n)}</b></td><td>${c}</td><td><select class="in" id="mg-${i}" style="min-width:200px"><option value="">Escolher…</option>${allResps().map(r => `<option>${esc(r)}</option>`).join('')}</select></td><td style="white-space:nowrap"><button class="btn b2 sm" data-mg="${i}">Trocar em ${c}</button> <button class="btn b3 sm" data-ma="${i}">Cadastrar como antigo</button></td></tr>`).join('')}</table></div>` : ''}`;
+    window._sobras = sobras;
+  }
   if (S.adm === 'import') body = `<div class="card rise"><h3 style="font-family:var(--hd);margin:0 0 4px">Importar portarias já cadastradas</h3><p style="color:var(--mu);margin:0 0 14px">Use o <b>Backup</b> do Sistema da Secretaria (aquele texto que você copia no botão Backup) ou um arquivo .json/.txt salvo dele. As portarias são aproveitadas com número, data, assunto, servidor, responsável, RH, assinatura e link. Números que já existem aqui são mantidos.</p>
   <label class="f">Escolher arquivo</label><input type="file" id="im-f" accept=".json,.txt,application/json,text/plain" class="in"><div style="height:12px"></div><label class="f">…ou cole o texto do Backup aqui</label><textarea class="in" id="im-t" rows="5" placeholder='{"portarias":[…]}'></textarea>
   <div id="im-pv" style="margin-top:14px"></div></div>`;
@@ -529,13 +557,13 @@ function admHtml() {
 }
 async function admGo() { if (S.adm === 'log') S.log = null; render(); await loadAdm(); if (S.tab === 'admin') render(); }
 function userModal(u) {
-  const o = modal(`<h3>Editar usuário</h3><div class="fgrid" style="margin-top:14px"><div class="c12"><label class="f">Nome</label><input class="in" id="e-n" value="${esc(u.nome)}"></div><div class="c12"><label class="f">Setor</label><input class="in" id="e-t" list="stl2" value="${esc(u.setor || '')}"></div><div class="c12"><label class="f">Perfil</label><select class="in" id="e-r">${Object.entries(ROLEN).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+  const o = modal(`<h3>Editar usuário</h3><div class="fgrid" style="margin-top:14px"><div class="c12"><label class="f">Nome</label><input class="in" id="e-n" value="${esc(u.nome)}"></div><div class="c12"><label class="f">Login <small>(a pessoa passa a entrar com o novo login)</small></label><input class="in" id="e-l" autocapitalize="none" value="${esc(u.login)}"></div><div class="c12"><label class="f">Setor</label><input class="in" id="e-t" list="stl2" value="${esc(u.setor || '')}"></div><div class="c12"><label class="f">Perfil</label><select class="in" id="e-r">${Object.entries(ROLEN).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
   <div class="c12"><label class="f">Nova senha <small>(deixe em branco para manter a atual)</small></label><input class="in" id="e-s" placeholder="mín. 6 caracteres"></div>
   <div class="c12"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="e-h" ${u.rh ? 'checked' : ''} style="width:18px;height:18px;accent-color:#117a4d"> Controle do RH</label></div>
   <div class="c12"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="e-a" ${u.ativo ? 'checked' : ''} style="width:18px;height:18px;accent-color:#117a4d"> Acesso ativo</label></div></div>
   <div class="mact"><button class="btn b1" id="e-ok">Salvar</button><button class="btn b3" id="e-c">Cancelar</button></div>`);
   $('#e-c', o).onclick = () => o.remove();
-  $('#e-ok', o).onclick = async () => { try { const b = { nome: $('#e-n', o).value, setor: $('#e-t', o).value, role: $('#e-r', o).value, rh: $('#e-h', o).checked, ativo: $('#e-a', o).checked }; if ($('#e-s', o).value) b.senha = $('#e-s', o).value; const r = await api('PUT', 'users/' + u.id, b); S.users = S.users.map(x => x.id === u.id ? r.user : x); o.remove(); toast('Usuário atualizado.'); render(); } catch (e) { toast(e.message, true); } };
+  $('#e-ok', o).onclick = async () => { try { const b = { nome: $('#e-n', o).value, login: $('#e-l', o).value, setor: $('#e-t', o).value, role: $('#e-r', o).value, rh: $('#e-h', o).checked, ativo: $('#e-a', o).checked }; if ($('#e-s', o).value) b.senha = $('#e-s', o).value; const r = await api('PUT', 'users/' + u.id, b); S.users = S.users.map(x => x.id === u.id ? r.user : x); o.remove(); toast('Usuário atualizado.'); render(); } catch (e) { toast(e.message, true); } };
 }
 function bindAdm() {
   const g = id => $('#' + id);
@@ -543,8 +571,11 @@ function bindAdm() {
   $$('[data-eu]').forEach(b => b.onclick = () => userModal(S.users.find(u => u.id === b.dataset.eu)));
   $$('[data-du]').forEach(b => b.onclick = async () => { const u = S.users.find(x => x.id === b.dataset.du); if (confirm(`Excluir o acesso de ${u.nome}?`)) { try { await api('DELETE', 'users/' + u.id); S.users = S.users.filter(x => x.id !== u.id); toast('Usuário excluído.'); render(); } catch (e) { toast(e.message, true); } } });
   const saveR = async l => { try { S.resps = (await api('PUT', 'resps', { list: l })).list; toast('Lista de responsáveis atualizada.'); render(); } catch (e) { toast(e.message, true); } };
-  if (g('rs-add')) { const go1 = () => { const v = g('rs-n').value.trim(); if (v) saveR([...S.resps.filter(r => r.nome !== v), { nome: v, setor: g('rs-t').value.trim() }]); }; g('rs-add').onclick = go1; g('rs-n').onkeydown = e => { if (e.key === 'Enter') go1(); }; }
+  if (g('rs-add')) { const go1 = () => { const v = g('rs-n').value.trim(); if (v) saveR([...S.resps.filter(r => r.nome !== v), { nome: v, setor: g('rs-t').value.trim(), ativo: !g('rs-a').checked }]); }; g('rs-add').onclick = go1; g('rs-n').onkeydown = e => { if (e.key === 'Enter') go1(); }; }
   $$('[data-rr]').forEach(b => b.onclick = () => saveR(S.resps.filter((_, i) => i !== +b.dataset.rr)));
+  $$('[data-rt]').forEach(b => b.onclick = () => saveR(S.resps.map((r, i) => i === +b.dataset.rt ? { ...r, ativo: r.ativo === false } : r)));
+  $$('[data-ma]').forEach(b => b.onclick = () => { const n = window._sobras[+b.dataset.ma][0], it = S.items.find(p => p.resp === n); saveR([...S.resps, { nome: n, setor: (it && it.setor) || '', ativo: false }]); });
+  $$('[data-mg]').forEach(b => b.onclick = async () => { const i = +b.dataset.mg, para = g('mg-' + i).value, de = window._sobras[i][0]; if (!para) return toast('Escolha o nome correto na lista.', true); if (!confirm(`Trocar “${de}” por “${para}” em ${window._sobras[i][1]} portaria(s)?`)) return; try { const r = await api('POST', 'resps/merge', { de, para }); S.items = (await api('GET', 'portarias')).items; toast(`${r.alteradas} portaria(s) atualizada(s).`); render(); } catch (e) { toast(e.message, true); } });
   if (g('bk-dl')) g('bk-dl').onclick = () => save(new Blob([JSON.stringify({ geradoEm: new Date().toISOString(), portarias: S.items.map(({ _b, ...p }) => p) }, null, 1)], { type: 'application/json' }), `portarias-${new Date().toISOString().slice(0, 10)}.json`);
   if (g('im-f')) {
     let list = null;
